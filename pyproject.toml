@@ -2,40 +2,29 @@
 name = "finance-tracker"
 version = "0.1.0"
 description = "A personal finance tracker built with Streamlit"
-authors = ["Your Name <de.nesterov@innopolis.university>"]
+authors = ["Denis Nesterov <denisnesterov3005@yandex.ru>"]
 readme = "README.md"
+packages = [{ include = "finance" }]
+# Python version constraint must go here
+# Compatible with httpx and other modern packages
 python = ">=3.8,<4.0"
 
-[project]
-name = "finance"
-version = "0.1.0"
-description = ""
-authors = [
-    {name = "Denis Nesterov",email = "denisnesterov3005@yandex.ru"}
-]
-readme = "README.md"
-requires-python = ">=3.13"
-dependencies = [
-    "fastapi (>=0.115.12,<0.116.0)",
-    "uvicorn (>=0.34.2,<0.35.0)",
-    "sqlalchemy (>=2.0.40,<3.0.0)",
-    "pydantic[email] (>=2.11.4,<3.0.0)",
-    "passlib[bcrypt] (>=1.7.4,<2.0.0)",
-    "python-jose (>=3.4.0,<4.0.0)",
-    "streamlit (>=1.45.0,<2.0.0)",
-    "requests (>=2.32.3,<3.0.0)",
-    "prometheus-fastapi-instrumentator (>=7.1.0,<8.0.0)",
-    "sentry-sdk (>=2.27.0,<3.0.0)",
-    "pandas (>=2.2.3,<3.0.0)",
-    "altair (>=5.5.0,<6.0.0)",
-    "python-dotenv (>=1.1.0,<2.0.0)",
-    "interrogate (>=1.7.0,<2.0.0)"
-]
-
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.poetry.dependencies]
+python = ">=3.8,<4.0"
+fastapi = ">=0.115.12,<0.116.0"
+uvicorn = ">=0.34.2,<0.35.0"
+sqlalchemy = ">=2.0.40,<3.0.0"
+pydantic = { version = ">=2.11.4,<3.0.0", extras = ["email"] }
+passlib = { version = ">=1.7.4,<2.0.0", extras = ["bcrypt"] }
+python-jose = ">=3.4.0,<4.0.0"
+streamlit = ">=1.45.0,<2.0.0"
+requests = ">=2.32.3,<3.0.0"
+prometheus-fastapi-instrumentator = ">=7.1.0,<8.0.0"
+sentry-sdk = ">=2.27.0,<3.0.0"
+pandas = ">=2.2.3,<3.0.0"
+altair = ">=5.5.0,<6.0.0"
+python-dotenv = ">=1.1.0,<2.0.0"
+interrogate = ">=1.7.0,<2.0.0"
 
 [tool.poetry.group.dev.dependencies]
 flake8 = "^7.2.0"
@@ -43,4 +32,8 @@ bandit = "^1.8.3"
 pytest = "^8.3.5"
 pytest-cov = "^6.1.1"
 httpx = "^0.28.1"
+mypy = "^1.10.0"
 
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

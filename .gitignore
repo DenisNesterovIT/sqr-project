@@ -108,4 +108,9 @@ venv.bak/
 .idea/*
 
 # tests
-/tests/__pycache__
+.tests/__pycache__
+
+# poetry
+poetry.lock
+
+.vscode/
