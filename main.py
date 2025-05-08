@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import (
     Column,
@@ -9,8 +9,12 @@ from sqlalchemy import (
     ForeignKey,
     create_engine,
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session, relationship
+from sqlalchemy.orm import (
+    sessionmaker,
+    Session,
+    relationship,
+    declarative_base
+)
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
@@ -19,33 +23,42 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from collections import defaultdict
 from time import time
+from prometheus_fastapi_instrumentator import Instrumentator
+import sentry_sdk
+import logging
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
-# Track failed login attempts: {username: [timestamps]}
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    traces_sample_rate=1.0,
+)
+
 failed_login_attempts = defaultdict(list)
 
-# Lockout config
-LOCKOUT_THRESHOLD = 5  # 5 failed attempts
-LOCKOUT_TIME_WINDOW = 300  # 5 minutes (in seconds)
-LOCKOUT_DURATION = 600  # Lock account for 10 minutes
-locked_accounts = {}  # {username: lockout_expiry_timestamp}
+LOCKOUT_THRESHOLD = 5
+LOCKOUT_TIME_WINDOW = 300
+LOCKOUT_DURATION = 600
+locked_accounts = {}
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-# Database setup
 DATABASE_URL = "sqlite:///./finance.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Password hashing
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# JWT settings
-SECRET_KEY = "your_secret_key_here"
+
+SECRET_KEY = os.environ.get("SECRET_KEY", "fallback_dev_key")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days token
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
 
 app = FastAPI()
@@ -160,6 +173,12 @@ class UserProfileUpdate(BaseModel):
 
 
 def get_db():
+    """
+    Yield a new database session for dependency injection.
+
+    Yields:
+        Session: SQLAlchemy database session.
+    """
     db = SessionLocal()
     try:
         yield db
@@ -168,6 +187,16 @@ def get_db():
 
 
 def verify_password(plain_password, hashed_password):
+    """
+    Verify that a plain password matches the hashed password.
+
+    Args:
+        plain_password (str): Raw password input.
+        hashed_password (str): Hashed password from DB.
+
+    Returns:
+        bool: True if password matches, False otherwise.
+    """
     return pwd_context.verify(plain_password, hashed_password)
 
 
@@ -176,6 +205,16 @@ def get_password_hash(password):
 
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
+    """
+    Create a JWT access token with optional expiry.
+
+    Args:
+        data (dict): Payload data to encode.
+        expires_delta (timedelta, optional): Expiry time delta.
+
+    Returns:
+        str: Encoded JWT token string.
+    """
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
     to_encode.update({"exp": expire})
@@ -183,6 +222,15 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 
 
 def get_user(username: str):
+    """
+    Retrieve a user by username.
+
+    Args:
+        username (str): Username to search for.
+
+    Returns:
+        User or None: User object if found, else None.
+    """
     with SessionLocal() as db:
         return db.query(User).filter(User.username == username).first()
 
@@ -191,6 +239,16 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ):
+    """
+    Retrieve the authenticated user based on JWT token.
+
+    Args:
+        token (str): JWT access token.
+        db (Session): Database session.
+
+    Returns:
+        User: Authenticated user object.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -217,6 +275,19 @@ def get_token(authorization: str = Depends(lambda: None)):
 
 @app.post("/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
+    """
+    Register a new user.
+
+    Checks for existing username or email
+    before creating a new user account.
+
+    Args:
+        user (UserCreate): User signup details.
+        db (Session): Database session.
+
+    Returns:
+        dict: Success message and newly created user ID.
+    """
     existing_user = db.query(User).filter(
         (User.username == user.username)
         | (User.email == user.email)).first()
@@ -239,8 +310,60 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             "user_id": new_user.id}
 
 
+Instrumentator().instrument(app).expose(app)
+error_count = 0
+total_requests = 0
+
+
+@app.middleware("http")
+async def count_errors_and_requests(request: Request, call_next):
+    global error_count, total_requests
+    total_requests += 1
+    try:
+        response = await call_next(request)
+        if response.status_code >= 400:
+            error_count += 1
+        return response
+    except Exception as e:
+        error_count += 1
+        logging.error(f"Unhandled error: {e}")
+        raise
+
+
+@app.get("/metrics/errors")
+def error_metrics():
+    """
+    Get current error metrics including error rate percentage.
+
+    Returns:
+        dict: Error rate, error count, and total request count.
+    """
+    if total_requests == 0:
+        error_rate = 0
+    else:
+        error_rate = (error_count / total_requests) * 100
+    return {
+        "error_rate_percent": error_rate,
+        "error_count": error_count,
+        "total_requests": total_requests
+    }
+
+
 @app.post("/login", response_model=Token)
 def login(user: UserLogin, db: Session = Depends(get_db)):
+    """
+    Authenticate user and issue a JWT token.
+
+    Implements lockout after multiple failed
+    attempts within a time window.
+
+    Args:
+        user (UserLogin): Login credentials.
+        db (Session): Database session.
+
+    Returns:
+        Token: JWT access token upon successful login.
+    """
     username = user.username
     current_time = time()
 
@@ -300,6 +423,17 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 def create_record(
         record: RecordCreate, db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)):
+    """
+    Create a financial record (income or expense) for the authenticated user.
+
+    Args:
+        record (RecordCreate): Record data.
+        db (Session): Database session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Success message and record ID.
+    """
     new_record = Record(
         user_id=current_user.id,
         amount=record.amount,
@@ -321,6 +455,18 @@ def update_record(
         record_id: int,
         updates: RecordUpdate, db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)):
+    """
+    Update an existing record belonging to the authenticated user.
+
+    Args:
+        record_id (int): ID of the record to update.
+        updates (RecordUpdate): Fields to update.
+        db (Session): Database session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Success message and updated record ID.
+    """
     record = db.query(Record).filter(
         Record.id == record_id,
         Record.user_id == current_user.id
@@ -344,6 +490,17 @@ def update_record(
 def delete_record(
         record_id: int, db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)):
+    """
+    Delete a record by ID belonging to the authenticated user.
+
+    Args:
+        record_id (int): ID of the record to delete.
+        db (Session): Database session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Success message.
+    """
     record = db.query(Record).filter(
         Record.id == record_id,
         Record.user_id == current_user.id
@@ -362,6 +519,17 @@ def delete_record(
 def create_category(category: CategoryCreate,
                     db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
+    """
+    Create a new category for organizing records.
+
+    Args:
+        category (CategoryCreate): Category details.
+        db (Session): Database session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        CategoryOut: Created category object.
+    """
     new_category = Category(user_id=current_user.id,
                             name=category.name)
     db.add(new_category)
@@ -374,6 +542,17 @@ def create_category(category: CategoryCreate,
 def get_categories(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)):
+    """
+    Retrieve all categories belonging to the authenticated user.
+
+    Args:
+        db (Session): Database session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        List[CategoryOut]: List of user categories.
+    """
+
     categories = db.query(Category).filter(
         Category.user_id ==
         current_user.id
@@ -388,6 +567,20 @@ def get_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Get dashboard summary including total income,
+    expenses, balance, and records.
+
+    Args:
+        start_date (datetime, optional): Filter
+            records starting from this date.
+        end_date (datetime, optional): Filter records up to this date.
+        db (Session): Database session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Summary with totals and records list.
+    """
     query = db.query(Record).filter(Record.user_id == current_user.id)
 
     if start_date:
@@ -431,11 +624,23 @@ def get_dashboard(
 
 @app.get("/report")
 def get_report(
-    period: str = Query("monthly", regex="^(monthly|yearly)$"),
+    period: str = Query("monthly", pattern="^(monthly|yearly)$"),
     year: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Get a financial report grouped by month or year.
+
+    Args:
+        period (str): Report period - 'monthly' or 'yearly'.
+        year (int, optional): Year filter for the report.
+        db (Session): Database session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Report summary with income, expenses, and balance.
+    """
     query = db.query(Record).filter(Record.user_id == current_user.id)
 
     if year:
@@ -470,6 +675,15 @@ def get_report(
 
 @app.get("/profile", response_model=UserProfileOut)
 def get_profile(current_user: User = Depends(get_current_user)):
+    """
+    Get authenticated user's profile information.
+
+    Args:
+        current_user (User): Authenticated user.
+
+    Returns:
+        UserProfileOut: User profile data.
+    """
     return current_user
 
 
@@ -477,6 +691,17 @@ def get_profile(current_user: User = Depends(get_current_user)):
 def update_profile(
         updates: UserProfileUpdate, db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)):
+    """
+    Update user profile fields: username, email, and password.
+
+    Args:
+        updates (UserProfileUpdate): Fields to update.
+        db (Session): Database session.
+        current_user (User): Authenticated user.
+
+    Returns:
+        dict: Success message.
+    """
     if updates.username:
         existing = db.query(User).filter(
             User.username == updates.username,
