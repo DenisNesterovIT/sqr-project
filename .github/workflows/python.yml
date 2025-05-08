@@ -1,0 +1,43 @@
+# .github/workflows/ci.yml
+name: Python CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: '1.8.2'
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+        
+      - name: Run flacke8 for main.py
+        run: poetry run flake8 main.py  
+        
+      - name: Run flacke8 for app.py
+        run: poetry run flake8 app.py  
+        
+      - name: Run bandit for main.py
+        run: poetry run bandit -r main.py     
+
+      - name: Run tests using pytest
+        run: |
+          poetry run pytest --cov=main --cov-report=term-missing
