@@ -77,14 +77,6 @@ Security check:
 ```bash
 poetry run bandit -r main.py
 ```
-
-
-Docstring coverage:
-
-```bash
-poetry run interrogate .
-```
-
 ---
 
 ## CI (GitHub Actions)
@@ -104,14 +96,14 @@ This project has full **CI** via `GitHub Actions`:
 ---
 
 
-## 📄 License
+## License
 
 MIT License.
-Feel free to use, modify, and distribute ⭐
+Feel free to use, modify, and distribute 
 
 ---
 
-## 👤 Author
+## Author
 
 **Denis Nesterov**
 📧 [de.nesterov@innopolis.university](mailto:de.nesterov@innopolis.university)
