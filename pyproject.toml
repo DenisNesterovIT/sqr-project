@@ -1,3 +1,10 @@
+[tool.poetry]
+name = "finance-tracker"
+version = "0.1.0"
+description = "A personal finance tracker built with Streamlit"
+authors = ["Your Name <de.nesterov@innopolis.university>"]
+readme = "README.md"
+
 [project]
 name = "finance"
 version = "0.1.0"
