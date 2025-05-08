@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A personal finance tracker built with Streamlit"
 authors = ["Your Name <de.nesterov@innopolis.university>"]
 readme = "README.md"
+python = ">=3.8,<4.0"
 
 [project]
 name = "finance"
