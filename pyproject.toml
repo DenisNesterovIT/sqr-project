@@ -5,9 +5,7 @@ description = "A personal finance tracker built with Streamlit"
 authors = ["Denis Nesterov <denisnesterov3005@yandex.ru>"]
 readme = "README.md"
 packages = [{ include = "finance" }]
-# Python version constraint must go here
-# Compatible with httpx and other modern packages
-python = ">=3.8,<4.0"
+
 
 [tool.poetry.dependencies]
 python = ">=3.8,<4.0"
