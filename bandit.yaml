@@ -1,0 +1,3 @@
+# bandit.yaml
+exclude_dirs:
+  - tests

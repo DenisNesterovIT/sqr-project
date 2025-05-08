@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Finance Tracker Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input, button { margin: 5px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background-color: #f4f4f4; }
+    .edit-form { display: none; margin-top: 10px; }
+    .notification { background: #cfffcf; padding: 5px; margin: 5px 0; }
+  </style>
+</head>
+<body>
+
+  <h1>💰 Finance Tracker</h1>
+
+  <!-- Login Form -->
+  <div id="loginSection">
+    <h2>Login</h2>
+    <input type="text" id="username" placeholder="Username">
+    <input type="password" id="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+  </div>
+
+  <!-- Add Record Form -->
+  <div id="recordForm" style="display:none;">
+    <h2>Add Record</h2>
+    <input type="number" id="amount" placeholder="Amount">
+    <input type="text" id="type" placeholder="Type (income/expense)">
+    <input type="text" id="category" placeholder="Category">
+    <input type="text" id="description" placeholder="Description">
+    <button onclick="addRecord()">Add</button>
+  </div>
+
+  <!-- Dashboard with date filters -->
+  <div id="dashboardSection" style="display:none;">
+    <h2>Dashboard</h2>
+    <label>From: <input type="date" id="startDate"></label>
+    <label>To: <input type="date" id="endDate"></label>
+    <button onclick="getDashboard()">Refresh Dashboard</button>
+
+    <!-- Summary -->
+    <div id="summary" style="margin-top: 20px;">
+      <strong>Total Income:</strong> <span id="totalIncome">0</span><br>
+      <strong>Total Expense:</strong> <span id="totalExpense">0</span><br>
+      <strong>Balance:</strong> <span id="balance">0</span>
+    </div>
+
+    <table id="recordsTable">
+      <thead>
+        <tr><th>ID</th><th>Date</th><th>Type</th><th>Category</th><th>Amount</th><th>Description</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="recordsBody"></tbody>
+    </table>
+
+    <!-- Edit Form -->
+    <div id="editForm" class="edit-form">
+      <h3>Edit Record <span id="editId"></span></h3>
+      <input type="number" id="editAmount" placeholder="Amount">
+      <input type="text" id="editType" placeholder="Type (income/expense)">
+      <input type="text" id="editCategory" placeholder="Category">
+      <input type="text" id="editDescription" placeholder="Description">
+      <button onclick="submitEdit()">Save</button>
+      <button onclick="cancelEdit()">Cancel</button>
+    </div>
+
+    <div id="notifications"></div>
+  </div>
+
+  <script>
+    const API = 'http://127.0.0.1:8000';
+    let token = localStorage.getItem('token') || '';
+
+    // On load, if token exists, hide login and show app
+    window.addEventListener('load', () => {
+      if (token) {
+        document.getElementById('loginSection').style.display = 'none';
+        document.getElementById('recordForm').style.display = 'block';
+        document.getElementById('dashboardSection').style.display = 'block';
+        getDashboard();
+      }
+    });
+
+    let currentEditId = null;
+
+    async function login() {
+      const res = await fetch(`${API}/login`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ username: document.getElementById('username').value, password: document.getElementById('password').value })
+      });
+      if (!res.ok) return alert('Login failed');
+      const data = await res.json();
+      token = data.access_token;
+      localStorage.setItem('token', token);
+      document.getElementById('loginSection').style.display = 'none';
+      document.getElementById('recordForm').style.display = 'block';
+      document.getElementById('dashboardSection').style.display = 'block';
+      getDashboard();
+    }
+
+    async function addRecord() {
+      const payload = {
+        amount: parseFloat(document.getElementById('amount').value),
+        type: document.getElementById('type').value,
+        category: document.getElementById('category').value,
+        description: document.getElementById('description').value
+      };
+      const res = await fetch(`${API}/records`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Authorization': `Bearer ${token}`},
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) return alert('Failed to add record');
+      notify('Record added');
+      getDashboard();
+    }
+
+    async function getDashboard() {
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+      let url = new URL(`${API}/dashboard`);
+      if (start) url.searchParams.append('start_date', start);
+      if (end)   url.searchParams.append('end_date', end);
+      const res = await fetch(url, { headers: {'Authorization': `Bearer ${token}`} });
+      if (!res.ok) return alert('Failed to load dashboard');
+      const data = await res.json();
+      document.getElementById('totalIncome').innerText = data.total_income;
+      document.getElementById('totalExpense').innerText = data.total_expense;
+      document.getElementById('balance').innerText = data.balance;
+      renderRecords(data.records);
+    }
+
+    function renderRecords(records) {
+      const tbody = document.getElementById('recordsBody');
+      tbody.innerHTML = '';
+      records.forEach(r => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${r.id}</td>
+            <td>${new Date(r.date).toLocaleDateString()}</td>
+            <td>${r.type}</td>
+            <td>${r.category}</td>
+            <td>${r.amount}</td>
+            <td>${r.description || ''}</td>
+            <td>
+              <button onclick="startEdit(${r.id}, ${r.amount}, '${r.type}', '${r.category}', '${r.description || ''}')">Edit</button>
+              <button onclick="deleteRecord(${r.id})">Delete</button>
+            </td>
+          </tr>`;
+      });
+    }
+
+    function startEdit(id, amount, type, category, description) {
+      currentEditId = id;
+      document.getElementById('editId').innerText = id;
+      document.getElementById('editAmount').value = amount;
+      document.getElementById('editType').value = type;
+      document.getElementById('editCategory').value = category;
+      document.getElementById('editDescription').value = description;
+      document.getElementById('editForm').style.display = 'block';
+    }
+
+    function cancelEdit() {
+      currentEditId = null;
+      document.getElementById('editForm').style.display = 'none';
+    }
+
+    async function submitEdit() {
+      const payload = {
+        amount: parseFloat(document.getElementById('editAmount').value),
+        type: document.getElementById('editType').value,
+        category: document.getElementById('editCategory').value,
+        description: document.getElementById('editDescription').value
+      };
+      const res = await fetch(`${API}/records/${currentEditId}`, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json','Authorization': `Bearer ${token}`},
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) return alert('Failed to update record');
+      notify('Record updated');
+      cancelEdit();
+      getDashboard();
+    }
+
+    async function deleteRecord(id) {
+      const res = await fetch(`${API}/records/${id}`, {
+        method: 'DELETE',
+        headers: {'Authorization': `Bearer ${token}`}
+      });
+      if (!res.ok) return alert('Failed to delete record');
+      notify('Record deleted');
+      getDashboard();
+    }
+
+    function notify(msg) {
+      const n = document.createElement('div');
+      n.className = 'notification';
+      n.innerText = msg;
+      document.getElementById('notifications').appendChild(n);
+      setTimeout(()=>n.remove(), 2000);
+    }
+  </script>
+
+</body>
+</html>

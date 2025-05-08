@@ -1,0 +1,29 @@
+[project]
+name = "finance"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Denis Nesterov",email = "denisnesterov3005@yandex.ru"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi (>=0.115.12,<0.116.0)",
+    "uvicorn (>=0.34.2,<0.35.0)",
+    "sqlalchemy (>=2.0.40,<3.0.0)",
+    "pydantic (>=2.11.4,<3.0.0)",
+    "passlib[bcrypt] (>=1.7.4,<2.0.0)",
+    "python-jose (>=3.4.0,<4.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+flake8 = "^7.2.0"
+bandit = "^1.8.3"
+pytest = "^8.3.5"
+pytest-cov = "^6.1.1"
+
